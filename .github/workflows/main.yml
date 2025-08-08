@@ -1,0 +1,42 @@
+name: 同步上游分支
+
+on:
+  schedule:
+    # 定时任务，每小时运行一次
+    - cron: '0 * * * *'
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # 步骤1：先将您自己的仓库代码下载到虚拟机里
+      - name: Checkout Your Fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 步骤2：执行一系列Git命令来完成同步
+      - name: Run Git Commands to Sync
+        run: |
+          # 配置Git用户信息
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # 添加上游（原始）仓库作为一个名为"upstream"的远程地址
+          # 这里的URL已经为您更新为新的LibreSpark项目地址
+          git remote add upstream https://github.com/LibreSpark/LibreTV.git
+
+          # 从上游仓库拉取所有最新的信息
+          git fetch upstream
+
+          # 切换到您仓库的main分支
+          git checkout main
+
+          # 将上游仓库的main分支合并到您当前的main分支
+          git merge upstream/main
+
+          # 将更新后的main分支，推送回您在GitHub上的仓库
+          git push origin main
