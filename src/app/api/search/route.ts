@@ -47,6 +47,31 @@ const SEARCH_SOURCE_TIMEOUT_MS = (() => {
   return Math.min(60000, Math.max(3000, n));
 })();
 
+/**
+ * Keep upstream fan-out below Cloudflare Workers' per-invocation connection cap.
+ * Batch source probing already uses concurrency 4; search must use the same
+ * bounded pattern instead of opening one connection for every selected source.
+ */
+const SEARCH_CONCURRENCY = 4;
+
+/** Run async work with bounded concurrency while preserving each item's index. */
+async function mapConcurrent<T>(
+  items: T[],
+  concurrency: number,
+  run: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      for (;;) {
+        const index = next++;
+        if (index >= items.length) return;
+        await run(items[index], index);
+      }
+    })
+  );
+}
+
 /** AbortSignal.timeout / 源级死线中断均以 TimeoutError 语义呈现（直接抛出或挂在 cause 上） */
 function isTimeoutError(err: unknown): boolean {
   const candidates: unknown[] = [err, err instanceof Error ? err.cause : undefined];
@@ -227,7 +252,10 @@ export async function POST(req: Request) {
 
   const isStream = new URL(req.url).searchParams.get('stream') === '1';
   if (!isStream) {
-    const outcomes = await Promise.all(sources.map((source) => searchSource(source, wd)));
+    const outcomes = new Array<SourceSearchOutcome>(sources.length);
+    await mapConcurrent(sources, SEARCH_CONCURRENCY, async (source, index) => {
+      outcomes[index] = await searchSource(source, wd);
+    });
     const payload = aggregateOutcomes(outcomes, wd, filterAdult);
     setCache(cacheKey, payload, SEARCH_CACHE_TTL);
     return NextResponse.json(payload);
@@ -248,13 +276,11 @@ export async function POST(req: Request) {
 
       // 逐源结算即推送；outcomes 按下标回填保证聚合顺序稳定
       const outcomes: SourceSearchOutcome[] = new Array(sources.length);
-      await Promise.all(
-        sources.map(async (source, i) => {
-          const outcome = await searchSource(source, wd);
-          outcomes[i] = outcome;
-          send({ type: 'source', ...outcome });
-        })
-      );
+      await mapConcurrent(sources, SEARCH_CONCURRENCY, async (source, i) => {
+        const outcome = await searchSource(source, wd);
+        outcomes[i] = outcome;
+        send({ type: 'source', ...outcome });
+      });
 
       const payload = aggregateOutcomes(outcomes, wd, filterAdult);
       setCache(cacheKey, payload, SEARCH_CACHE_TTL);

@@ -7,6 +7,11 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  // A Workers Free request has a 50 external-subrequest limit. One search page
+  // per source keeps a 28-source aggregate below that limit with room for redirects.
+  "vars": {
+    "SEARCH_MAX_PAGES": "1"
+  },
   "main": "vinext/server/fetch-handler",
   "assets": {
     "directory": "dist/client",
