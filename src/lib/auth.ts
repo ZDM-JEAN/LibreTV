@@ -84,6 +84,10 @@ const WINDOW_MS = 10 * 60 * 1000;
 
 export function checkRateLimit(ip: string): boolean {
   const now = Date.now();
+  // Workers disallow timers at module scope. Reap stale entries during requests instead.
+  for (const [key, value] of attemptMap) {
+    if (now > value.resetAt) attemptMap.delete(key);
+  }
   const entry = attemptMap.get(ip);
   if (!entry || now > entry.resetAt) {
     attemptMap.set(ip, { count: 1, resetAt: now + WINDOW_MS });
@@ -96,16 +100,4 @@ export function checkRateLimit(ip: string): boolean {
 
 export function clearRateLimit(ip: string): void {
   attemptMap.delete(ip);
-}
-
-// 定期清理过期限流记录，避免长期运行下 Map 膨胀
-if (typeof setInterval === 'function') {
-  const timer = setInterval(() => {
-    const now = Date.now();
-    for (const [ip, entry] of attemptMap) {
-      if (now > entry.resetAt) attemptMap.delete(ip);
-    }
-  }, 60 * 1000);
-  // 不阻止 Node 进程退出
-  if (typeof timer.unref === 'function') timer.unref();
 }
