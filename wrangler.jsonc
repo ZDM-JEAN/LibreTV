@@ -3,6 +3,7 @@
   "name": "libretv-workers-preview",
   // Publish the password-protected production Worker on its workers.dev URL.
   "workers_dev": true,
+  "preview_urls": false,
   "compatibility_date": "2026-09-25",
   "compatibility_flags": [
     "nodejs_compat"
